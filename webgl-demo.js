@@ -159,6 +159,7 @@ function initShaderProgram(gl, vsSource, fsSource) {
   let gravityAcceleration = 0.0; // Gravity acceleration rate
   let maxGravityStrength = 0.005; // Maximum gravity strength
   const bounceCoefficient = 0.75; // Energy loss on bounce (increased for more realism)
+  let frictionCoefficient = 0.003; // Friction coefficient for bottom surface (adjustable)
 
   // Only continue if WebGL is available and working
   if (gl === null) {
@@ -229,6 +230,8 @@ function initShaderProgram(gl, vsSource, fsSource) {
   const gravityStrengthSlider = document.getElementById('gravity-strength-slider');
   const gravityStrengthValue = document.getElementById('gravity-strength-value');
   const gravityStrengthContainer = document.getElementById('gravity-strength-container');
+  const frictionSlider = document.getElementById('friction-slider');
+  const frictionValue = document.getElementById('friction-value');
   
   // Track custom vertex count
   let customVertexCount = 6; // Default
@@ -329,6 +332,9 @@ function initShaderProgram(gl, vsSource, fsSource) {
   // Initialize the gravity strength display
   updateGravityDisplay();
   
+  // Initialize the friction value display
+  frictionValue.textContent = frictionCoefficient.toFixed(4);
+  
   // Gravity strength slider handler
   gravityStrengthSlider.addEventListener('input', (e) => {
     // If gravity acceleration is active, disable it when manually adjusting
@@ -339,6 +345,12 @@ function initShaderProgram(gl, vsSource, fsSource) {
     
     gravityStrength = parseFloat(e.target.value);
     updateGravityDisplay();
+  });
+  
+  // Friction slider handler
+  frictionSlider.addEventListener('input', (e) => {
+    frictionCoefficient = parseFloat(e.target.value);
+    frictionValue.textContent = frictionCoefficient.toFixed(4);
   });
   
   // Motion speed slider handler
@@ -694,6 +706,18 @@ function initShaderProgram(gl, vsSource, fsSource) {
             newY = maxY;
           } else if (newY < -maxY) {
             newY = -maxY;
+            
+            // Apply friction when hitting the bottom
+            // Friction affects only the horizontal velocity
+            // Scale with motion speed for consistency at different speeds
+            const frictionForce = frictionCoefficient * Math.abs(velocityX) * motionSpeed;
+            if (Math.abs(velocityX) > frictionForce) {
+              // Reduce velocity based on direction of motion
+              velocityX -= Math.sign(velocityX) * frictionForce;
+            } else {
+              // Stop completely if velocity is too small
+              velocityX = 0;
+            }
           }
           
           // Add a small random component on bounce to simulate imperfect surfaces
@@ -712,6 +736,26 @@ function initShaderProgram(gl, vsSource, fsSource) {
         // Apply quadratic drag (force proportional to velocity squared)
         velocityX -= vxSign * vxMag * vxMag * airResistance * deltaTime;
         velocityY -= vySign * vyMag * vyMag * airResistance * deltaTime;
+        
+        // Apply continuous friction when near the bottom
+        // Define a proximity threshold as a percentage of maxY
+        const bottomProximityThreshold = 0.0001; // Extremely tiny threshold for friction effect
+        if (newY < -maxY + (maxY * bottomProximityThreshold)) {
+          // Calculate friction intensity based on proximity to bottom (closer = more friction)
+          const distanceFromBottom = (newY + maxY) / (maxY * bottomProximityThreshold);
+          const proximityFactor = 1 - Math.min(1, Math.max(0, distanceFromBottom));
+          
+          // Apply friction proportional to velocity, proximity, and motion speed
+          const groundFriction = frictionCoefficient * proximityFactor * deltaTime * motionSpeed;
+          
+          // Apply friction to horizontal movement
+          if (Math.abs(velocityX) > groundFriction * 10) {
+            velocityX -= vxSign * groundFriction * 10;
+          } else {
+            // Add a small threshold to prevent perpetual tiny movements
+            velocityX = 0;
+          }
+        }
         
         // Update position
         shapePositionX = newX;
